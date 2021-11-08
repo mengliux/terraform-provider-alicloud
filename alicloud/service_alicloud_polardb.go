@@ -2,6 +2,7 @@ package alicloud
 
 import (
 	"encoding/json"
+	"github.com/PaesslerAG/jsonpath"
 	"log"
 	"regexp"
 	"strings"
@@ -1384,4 +1385,54 @@ func convertPolarDBIpsSetToString(sourceIps string) []string {
 		}
 	}
 	return ips
+}
+func (s *PolarDBService) DescribePolarDBStoragePlan(d *schema.ResourceData) (storagePlan map[string]interface{}, err error) {
+	action := "DescribeStoragePlan"
+	request := make(map[string]interface{})
+	request["PageSize"] = PageSizeLarge
+	request["PageNumber"] = 1
+
+	conn, err := s.client.NewPolarDBClient()
+	if err != nil {
+		return nil, WrapError(err)
+	}
+
+	runtime := util.RuntimeOptions{}
+	runtime.SetAutoretry(true)
+
+	var objects []map[string]interface{}
+	for {
+		response, err := conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &runtime)
+		if err != nil {
+			return nil, WrapErrorf(err, DefaultErrorMsg, d.Id(), action, AlibabaCloudSdkGoERROR)
+		}
+		addDebug(action, response, request)
+		resp, err := jsonpath.Get("$.Items.DescribeStoragePlanResponses", response)
+		result, _ := resp.([]interface{})
+		if err != nil {
+			return nil, WrapErrorf(err, FailedGetAttributeMsg, d.Id(), "$.Items.DescribeStoragePlanResponses", response)
+		}
+		if len(result) < 1 {
+			return nil, WrapErrorf(Error(GetNotFoundMessage("DescribeStoragePlanResponses", d.Id())), NotFoundMsg, ProviderERROR)
+		} else {
+			for _, v := range result {
+				if v.(map[string]interface{})["InstanceName"] == d.Id() {
+					item := v.(map[string]interface{})
+					objects = append(objects, item)
+				}
+			}
+		}
+		if len(result) < PageSizeLarge {
+			break
+		}
+		request["PageNumber"] = request["PageNumber"].(int) + 1
+	}
+
+	for _, object := range objects {
+		if object["InstanceName"] == d.Id() {
+			storagePlan = object
+			break
+		}
+	}
+	return storagePlan, nil
 }
