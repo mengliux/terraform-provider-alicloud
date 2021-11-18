@@ -15,6 +15,7 @@ func resourceAlicloudPolarDBStoragePlan() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceAlicloudPolarDBStoragePlanCreate,
 		Read:   resourceAlicloudPolarDBStoragePlanRead,
+		Delete: resourceAlicloudPolarDBStoragePlanDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -23,16 +24,19 @@ func resourceAlicloudPolarDBStoragePlan() *schema.Resource {
 			"storage_type": {
 				Type:         schema.TypeString,
 				ValidateFunc: validation.StringInSlice([]string{"Mainland", "Overseas"}, false),
+				ForceNew:     true,
 				Required:     true,
 			},
 			"period": {
 				Type:         schema.TypeInt,
 				ValidateFunc: validation.IntInSlice([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 24, 36, 60}),
+				ForceNew:     true,
 				Required:     true,
 			},
 			"storage_class": {
 				Type:         schema.TypeString,
 				ValidateFunc: validation.StringInSlice([]string{"50", "100", "200", "300", "500", "1000", "2000", "3000", "5000", "10000", "15000", "20000", "25000", "30000", "50000", "100000", "200000"}, false),
+				ForceNew:     true,
 				Required:     true,
 			},
 			"prod_code": {
@@ -48,10 +52,6 @@ func resourceAlicloudPolarDBStoragePlan() *schema.Resource {
 				Computed: true,
 			},
 			"template_name": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"other_property": {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
@@ -96,8 +96,9 @@ func resourceAlicloudPolarDBStoragePlan() *schema.Resource {
 }
 
 func resourceAlicloudPolarDBStoragePlanCreate(d *schema.ResourceData, meta interface{}) error {
-
 	client := meta.(*connectivity.AliyunClient)
+	polarDBService := PolarDBService{client}
+
 	var response map[string]interface{}
 	conn, err := client.NewPolarDBClient()
 	if err != nil {
@@ -120,20 +121,24 @@ func resourceAlicloudPolarDBStoragePlanCreate(d *schema.ResourceData, meta inter
 			}
 			return resource.NonRetryableError(err)
 		}
+		addDebug(action, response, request)
 		return nil
 	})
-	addDebug(action, response, request)
-	d.SetId(response["DBInstanceId"].(string))
 	if err != nil {
 		return WrapErrorf(err, DefaultErrorMsg, d.Id(), action, AlibabaCloudSdkGoERROR)
 	}
-	return resourceAlicloudPolarDBDatabaseRead(d, meta)
+	d.SetId(response["DBInstanceId"].(string))
+	stateConf := BuildStateConf([]string{}, []string{"Valid"}, d.Timeout(schema.TimeoutUpdate), 3*time.Minute, polarDBService.PolarDBStoragePlanStateRefreshFunc(d.Id(), []string{}))
+	if _, err := stateConf.WaitForState(); err != nil {
+		return WrapErrorf(err, IdMsg, d.Id())
+	}
+	return resourceAlicloudPolarDBStoragePlanRead(d, meta)
 }
 
 func resourceAlicloudPolarDBStoragePlanRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*connectivity.AliyunClient)
 	polarDBService := PolarDBService{client}
-	storagePlan, err := polarDBService.DescribePolarDBStoragePlan(d)
+	storagePlan, err := polarDBService.DescribePolarDBStoragePlan(d.Id())
 	if err != nil {
 		if NotFoundError(err) {
 			d.SetId("")
@@ -142,7 +147,7 @@ func resourceAlicloudPolarDBStoragePlanRead(d *schema.ResourceData, meta interfa
 		return WrapError(err)
 	}
 
-	d.Set("id", storagePlan["InstanceName"])
+	d.Set("id", storagePlan["InstanceId"])
 	d.Set("ali_uid", storagePlan["AliUid"])
 	d.Set("storage_type", storagePlan["StorageType"])
 	d.Set("period", d.Get("period"))
@@ -150,7 +155,6 @@ func resourceAlicloudPolarDBStoragePlanRead(d *schema.ResourceData, meta interfa
 	d.Set("prod_code", storagePlan["ProdCode"])
 	d.Set("commodity_code", storagePlan["CommodityCode"])
 	d.Set("template_name", storagePlan["TemplateName"])
-	d.Set("other_property", storagePlan["OtherProperty"])
 	d.Set("status", storagePlan["Status"])
 	d.Set("start_times", storagePlan["StartTimes"])
 	d.Set("end_times", storagePlan["EndTimes"])
@@ -165,12 +169,9 @@ func resourceAlicloudPolarDBStoragePlanRead(d *schema.ResourceData, meta interfa
 }
 
 func buildDBCreateStoragePlanRequest(d *schema.ResourceData, meta interface{}) (map[string]interface{}, error) {
-	var request map[string]interface{}
-	if storageClass, ok := d.GetOk("storage_class"); ok && Trim(storageClass.(string)) != "" {
-		request["StorageClass"] = Trim(storageClass.(string))
-	}
-	if storageType, ok := d.GetOk("storage_type"); ok && Trim(storageType.(string)) != "" {
-		request["StorageClass"] = Trim(storageType.(string))
+	request := map[string]interface{}{
+		"StorageType":  Trim(d.Get("storage_type").(string)),
+		"StorageClass": Trim(d.Get("storage_class").(string)),
 	}
 	// At present, API supports two charge options about 'Prepaid'.
 	// 'Month': valid period ranges [1-9]; 'Year': valid period range [1,2,3,5]
@@ -184,4 +185,8 @@ func buildDBCreateStoragePlanRequest(d *schema.ResourceData, meta interface{}) (
 		}
 	}
 	return request, nil
+}
+
+func resourceAlicloudPolarDBStoragePlanDelete(d *schema.ResourceData, meta interface{}) error {
+	return nil
 }

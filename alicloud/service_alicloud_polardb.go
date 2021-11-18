@@ -1386,40 +1386,51 @@ func convertPolarDBIpsSetToString(sourceIps string) []string {
 	}
 	return ips
 }
-func (s *PolarDBService) DescribePolarDBStoragePlan(d *schema.ResourceData) (storagePlan map[string]interface{}, err error) {
+func (s *PolarDBService) DescribePolarDBStoragePlan(id string) (storagePlan map[string]interface{}, err error) {
 	action := "DescribeStoragePlan"
-	request := make(map[string]interface{})
-	request["PageSize"] = PageSizeLarge
-	request["PageNumber"] = 1
-
+	request := map[string]interface{}{
+		"PageSize":   PageSizeLarge,
+		"PageNumber": 1,
+	}
 	conn, err := s.client.NewPolarDBClient()
 	if err != nil {
 		return nil, WrapError(err)
 	}
-
-	runtime := util.RuntimeOptions{}
-	runtime.SetAutoretry(true)
-
+	var response map[string]interface{}
 	var objects []map[string]interface{}
 	for {
-		response, err := conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &runtime)
+		runtime := util.RuntimeOptions{}
+		runtime.SetAutoretry(true)
+		wait := incrementalWait(3*time.Second, 3*time.Second)
+		err = resource.Retry(5*time.Minute, func() *resource.RetryError {
+			response, err = conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &runtime)
+			bs, err := json.Marshal(response)
+			log.Printf("aaaaaa response: %v", string(bs))
+			if err != nil {
+				if NeedRetry(err) {
+					wait()
+					return resource.RetryableError(err)
+				}
+				return resource.NonRetryableError(err)
+			}
+			addDebug(action, response, request)
+			return nil
+		})
 		if err != nil {
-			return nil, WrapErrorf(err, DefaultErrorMsg, d.Id(), action, AlibabaCloudSdkGoERROR)
+			return nil, WrapErrorf(err, DefaultErrorMsg, id, action, AlibabaCloudSdkGoERROR)
 		}
-		addDebug(action, response, request)
-		resp, err := jsonpath.Get("$.Items.DescribeStoragePlanResponses", response)
+
+		resp, err := jsonpath.Get("$.Items", response)
 		result, _ := resp.([]interface{})
 		if err != nil {
-			return nil, WrapErrorf(err, FailedGetAttributeMsg, d.Id(), "$.Items.DescribeStoragePlanResponses", response)
+			return nil, WrapErrorf(err, FailedGetAttributeMsg, id, "$.Items.DescribeStoragePlanResponses", response)
 		}
 		if len(result) < 1 {
-			return nil, WrapErrorf(Error(GetNotFoundMessage("DescribeStoragePlanResponses", d.Id())), NotFoundMsg, ProviderERROR)
+			return nil, WrapErrorf(Error(GetNotFoundMessage("DescribeStoragePlanResponses", id)), NotFoundMsg, ProviderERROR)
 		} else {
 			for _, v := range result {
-				if v.(map[string]interface{})["InstanceName"] == d.Id() {
-					item := v.(map[string]interface{})
-					objects = append(objects, item)
-				}
+				item := v.(map[string]interface{})
+				objects = append(objects, item)
 			}
 		}
 		if len(result) < PageSizeLarge {
@@ -1427,12 +1438,36 @@ func (s *PolarDBService) DescribePolarDBStoragePlan(d *schema.ResourceData) (sto
 		}
 		request["PageNumber"] = request["PageNumber"].(int) + 1
 	}
-
+	log.Printf("objects aaaaaaa: %v", objects)
 	for _, object := range objects {
-		if object["InstanceName"] == d.Id() {
+		log.Printf("object aaaaaaa: %v", object)
+		if object["InstanceId"] == id {
 			storagePlan = object
 			break
 		}
 	}
+
+	log.Printf("storagePlan aaaaaaa: %v", storagePlan)
 	return storagePlan, nil
+}
+
+func (s *PolarDBService) PolarDBStoragePlanStateRefreshFunc(id string, failStates []string) resource.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+
+		object, err := s.DescribePolarDBStoragePlan(id)
+		if err != nil {
+			if NotFoundError(err) {
+				// Set this to nil as if we didn't find anything.
+				return nil, "", nil
+			}
+			return nil, "", WrapError(err)
+		}
+
+		for _, failState := range failStates {
+			if object["Status"].(string) == failState {
+				return object, object["status"].(string), WrapError(Error(FailedToReachTargetStatus, object["Status"].(string)))
+			}
+		}
+		return object, object["Status"].(string), nil
+	}
 }

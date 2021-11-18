@@ -12,7 +12,7 @@ description: |-
 The `alicloud_polardb_storage_plans` data source provides a collection of PolarDB Storage Packages available in Alibaba Cloud account.
 Filters support regular expression for the cluster description, searches by tags, and other filters which are listed below.
 
--> **NOTE:** Available in v1.140.0+.
+-> **NOTE:** Available in v1.143.0+.
 
 ## Argument Reference
 
@@ -26,7 +26,7 @@ The following arguments are supported:
 The following attributes are exported in addition to the arguments listed above:
 
 * `ids` - A list of Storage Package IDs.
-* `describeStoragePlanResponses` - A list of PolarDB Storage Packages. Each element contains the following attributes:
+* `storage_plans` - A list of PolarDB Storage Packages. Each element contains the following attributes:
   * `id` - The ID of the PolarDB Storage Package.
   * `prod_code` - Product code.
   * `ali_uid` - AliUid.
@@ -34,8 +34,7 @@ The following attributes are exported in addition to the arguments listed above:
   * `template_name` - Resource package type.
   * `storage_type` - Specification of storage package type.Valid values are `Overseas`, `Mainland`, `Financial`.
   * `storage_class` - Specification of storage package.Valid values are `50`, `100`, `200`, `300`, `500`, `1000`, `2000`, `3000`, `5000`, `10000`, `15000`, `20000`, `25000`, `30000`, `50000`, `100000`, `200000`.
-  * `other_property` - Specification of storage package remark.
-  * `status` - Status of the Storage Package.Valid values are `valid`, `invalid`.
+  * `status` - Status of the Storage Package.Valid values are `Valid`, `Invalid`.
   * `start_times` - Resource start times.
   * `end_times` - Resource end times.
   * `purchase_times` - Resource purchase times.

@@ -26,7 +26,7 @@ func dataSourceAlicloudPolarDBStoragePlans() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"describeStoragePlanResponses": {
+			"storage_plans": {
 				Type:     schema.TypeList,
 				Computed: true,
 				Elem: &schema.Resource{
@@ -52,10 +52,6 @@ func dataSourceAlicloudPolarDBStoragePlans() *schema.Resource {
 							Computed: true,
 						},
 						"storage_type": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"other_property": {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
@@ -112,7 +108,7 @@ func dataSourceAlicloudStoragePlansPolarDBRead(d *schema.ResourceData, meta inte
 	}
 
 	var response map[string]interface{}
-	conn, err := client.NewRdsClient()
+	conn, err := client.NewPolarDBClient()
 	if err != nil {
 		return WrapError(err)
 	}
@@ -136,11 +132,11 @@ func dataSourceAlicloudStoragePlansPolarDBRead(d *schema.ResourceData, meta inte
 		})
 		addDebug(action, response, request)
 		if err != nil {
-			return WrapErrorf(err, DataDefaultErrorMsg, "alicloud_db_instances", action, AlibabaCloudSdkGoERROR)
+			return WrapErrorf(err, DataDefaultErrorMsg, "alicloud_polardb_storage_plans", action, AlibabaCloudSdkGoERROR)
 		}
-		resp, err := jsonpath.Get("$.Items.DescribeStoragePlanResponses", response)
+		resp, err := jsonpath.Get("$.Items", response)
 		if err != nil {
-			return WrapErrorf(err, FailedGetAttributeMsg, action, "$.Items.DBInstance", response)
+			return WrapErrorf(err, FailedGetAttributeMsg, action, d.Id(), response)
 		}
 		result, _ := resp.([]interface{})
 		for _, v := range result {
@@ -158,13 +154,12 @@ func dataSourceAlicloudStoragePlansPolarDBRead(d *schema.ResourceData, meta inte
 
 	for _, item := range objects {
 		mapping := map[string]interface{}{
-			"id":                         fmt.Sprint(item["InstanceName"]),
+			"id":                         fmt.Sprint(item["InstanceId"]),
 			"prod_code":                  fmt.Sprint(item["ProdCode"]),
 			"ali_uid":                    fmt.Sprint(item["AliUid"]),
 			"commodity_code":             fmt.Sprint(item["CommodityCode"]),
 			"template_name":              fmt.Sprint(item["TemplateName"]),
 			"storage_type":               fmt.Sprint(item["StorageType"]),
-			"other_property":             fmt.Sprint(item["OtherProperty"]),
 			"status":                     fmt.Sprint(item["Status"]),
 			"start_times":                fmt.Sprint(item["StartTimes"]),
 			"end_times":                  fmt.Sprint(item["EndTimes"]),
@@ -182,7 +177,7 @@ func dataSourceAlicloudStoragePlansPolarDBRead(d *schema.ResourceData, meta inte
 	if err := d.Set("ids", ids); err != nil {
 		return WrapError(err)
 	}
-	if err := d.Set("describeStoragePlanResponses", s); err != nil {
+	if err := d.Set("storage_plans", s); err != nil {
 		return WrapError(err)
 	}
 

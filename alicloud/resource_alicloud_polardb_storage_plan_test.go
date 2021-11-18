@@ -15,7 +15,7 @@ func TestAccAlicloudPolarDBStoragePlanUpdate(t *testing.T) {
 	ra := resourceAttrInit(resourceId, storagePlanBasicMap)
 	rc := resourceCheckInitWithDescribeMethod(resourceId, &v, func() interface{} {
 		return &PolarDBService{testAccProvider.Meta().(*connectivity.AliyunClient)}
-	}, "DescribeStoragePlan")
+	}, "DescribePolarDBStoragePlan")
 	rac := resourceAttrCheckInit(rc, ra)
 
 	testAccCheck := rac.resourceAttrMapUpdateSet()
@@ -25,34 +25,30 @@ func TestAccAlicloudPolarDBStoragePlanUpdate(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 		},
-
 		// module name
 		IDRefreshName: resourceId,
-
-		Providers: testAccProviders,
+		Providers:     testAccProviders,
 		//因为没有API delete
 		//CheckDestroy: rac.checkResourceDestroy(),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccConfig(map[string]interface{}{
-					"storage_type":  "Mainland",
-					"period":        1,
+					"storage_type":  "Overseas",
+					"period":        "1",
 					"storage_class": "50",
 				}),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheck(map[string]string{
-						"prod_code":      "polardb",
-						"commodity_code": "polardb_package",
-						"storage_type":   CHECKSET,
-						"storage_class":  CHECKSET,
-						"other_property": CHECKSET,
+						"storage_type":  CHECKSET,
+						"storage_class": CHECKSET,
 					}),
 				),
 			},
 			{
-				ResourceName:      resourceId,
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            resourceId,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"period", "storage_class"},
 			},
 		},
 	})
@@ -71,11 +67,6 @@ func resourceDBStoragePlanConfigDependence(name string) string {
 	return fmt.Sprintf(`
 	variable "name" {
 		default = "%s"
-	}
-	resource "alicloud_db_storage_plan" "default" {
-		"storage_type": "Mainland",
-		"period": 1,
-		"storage_class": "50",
 	}
 	`, name)
 }

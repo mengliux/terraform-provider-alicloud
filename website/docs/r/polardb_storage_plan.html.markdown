@@ -2,16 +2,16 @@
 subcategory: "PolarDB"
 layout: "alicloud"
 page_title: "Alicloud: alicloud_polardb_storage_plan"
-sidebar_current: "docs-alicloud-resource-polardb-_storage-plan"
+sidebar_current: "docs-alicloud-resource-polardb-storage-plan"
 description: |-
 Provides a collection of PolarDB Storage Packages according to the specified filters.
 ---
 
 # alicloud\_polardb\_storage_plan
 
-_storage_plan
+Provides a PolarDB Storage Packages resource to manage endpoint of PolarDB Storage Packages.
 
--> **NOTE:** Available in v1.140.0+.
+-> **NOTE:** Available in v1.143.0+.
 
 ## Example Usage
 
@@ -27,7 +27,7 @@ resource "alicloud_polardb_storage_plan" "default" {
 
 The following arguments are supported:
 
-* `storage_type` - Specification of storage package type.Valid values are `Overseas`, `Mainland`, `Financial`.
+* `storage_type` - Specification of storage package type.Valid values are `Overseas`, `Mainland`, `Financial`.Value options can refer to the latest docs [CreateStoragePlan](https://help.aliyun.com/document_detail/345616.html)
 * `storage_class` - Specification of storage package.Valid values are `50`, `100`, `200`, `300`, `500`, `1000`, `2000`, `3000`, `5000`, `10000`, `15000`, `20000`, `25000`, `30000`, `50000`, `100000`, `200000`.
 * `period` - The duration that you will buy storage package (in month). Valid values: [1~9], 12, 24, 36, 60.
   -> **NOTE:** The argument `period` is only used to create Subscription storage package. Once effect, it will not be modified that means running `terraform apply` will not effect the resource.
@@ -42,8 +42,7 @@ The following attributes are exported:
 * `template_name` - Resource package type.
 * `storage_type` - Specification of storage package type.Valid values are `Overseas`, `Mainland`, `Financial`.
 * `storage_class` - Specification of storage package.Valid values are `50`, `100`, `200`, `300`, `500`, `1000`, `2000`, `3000`, `5000`, `10000`, `15000`, `20000`, `25000`, `30000`, `50000`, `100000`, `200000`.
-* `other_property` - Specification of storage package remark.
-* `status` - Status of the Storage Package.Valid values are `valid`, `invalid`.
+* `status` - Status of the Storage Package.Valid values are `Valid`, `Invalid`.
 * `start_times` - Resource start times.
 * `end_times` - Resource end times.
 * `purchase_times` - Resource purchase times.
