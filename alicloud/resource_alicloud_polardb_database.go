@@ -2,6 +2,8 @@ package alicloud
 
 import (
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"strings"
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/polardb"
@@ -44,6 +46,24 @@ func resourceAlicloudPolarDBDatabase() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"account_name": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			"account_privilege": {
+				Type:         schema.TypeString,
+				ValidateFunc: validation.StringInSlice([]string{"ReadWrite", "ReadOnly", "DMLOnly", "DDLOnly"}, false),
+				Default:      "ReadWrite",
+				Optional:     true,
+			},
+			"collate": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			"ctype": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 		},
 	}
 }
@@ -59,6 +79,10 @@ func resourceAlicloudPolarDBDatabaseCreate(d *schema.ResourceData, meta interfac
 
 	if v, ok := d.GetOk("db_description"); ok && v.(string) != "" {
 		request.DBDescription = v.(string)
+	}
+	request, errors := buildPolarDBDatabaseRequest(d, meta, request)
+	if errors != nil {
+		return WrapError(errors)
 	}
 
 	err := resource.Retry(5*time.Minute, func() *resource.RetryError {
@@ -80,7 +104,8 @@ func resourceAlicloudPolarDBDatabaseCreate(d *schema.ResourceData, meta interfac
 	}
 
 	d.SetId(fmt.Sprintf("%s%s%s", request.DBClusterId, COLON_SEPARATED, request.DBName))
-
+	//wait for database creation to complete
+	time.Sleep(30 * time.Second)
 	return resourceAlicloudPolarDBDatabaseRead(d, meta)
 }
 
@@ -102,8 +127,13 @@ func resourceAlicloudPolarDBDatabaseRead(d *schema.ResourceData, meta interface{
 	}
 	d.Set("db_cluster_id", parts[0])
 	d.Set("db_name", object.DBName)
-	d.Set("character_set_name", object.CharacterSetName)
+	d.Set("character_set_name", strings.ToLower(object.CharacterSetName))
 	d.Set("db_description", object.DBDescription)
+	if object.Engine != "MySQL" {
+		if len(object.Accounts.Account) > 0 {
+			d.Set("account_name", object.Accounts.Account[0].AccountName)
+		}
+	}
 
 	return nil
 }
@@ -159,4 +189,25 @@ func resourceAlicloudPolarDBDatabaseDelete(d *schema.ResourceData, meta interfac
 	addDebug(request.GetActionName(), raw, request.RpcRequest, request)
 
 	return WrapError(polarDBService.WaitForPolarDBDatabase(d.Id(), Deleted, DefaultTimeoutMedium))
+}
+
+func buildPolarDBDatabaseRequest(d *schema.ResourceData, meta interface{}, request *polardb.CreateDatabaseRequest) (*polardb.CreateDatabaseRequest, error) {
+	client := meta.(*connectivity.AliyunClient)
+	polarDBService := PolarDBService{client}
+	db_cluster_id := d.Get("db_cluster_id").(string)
+	clusterAttribute, error := polarDBService.DescribePolarDBClusterAttribute(db_cluster_id)
+	if error != nil {
+		if NotFoundError(error) {
+			d.SetId("")
+			return nil, nil
+		}
+		return nil, WrapError(error)
+	}
+	if clusterAttribute.DBType != "MySQL" {
+		request.AccountName = d.Get("account_name").(string)
+		request.AccountPrivilege = d.Get("account_privilege").(string)
+		request.Collate = d.Get("collate").(string)
+		request.Ctype = d.Get("ctype").(string)
+	}
+	return request, nil
 }
