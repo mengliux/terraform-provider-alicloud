@@ -759,6 +759,71 @@ func TestAccAlicloudPolarDBCluster_NormalMultimaster(t *testing.T) {
 	})
 }
 
+func TestAccAlicloudPolarDBClusterSENormalCreate(t *testing.T) {
+	var v map[string]interface{}
+	name := "tf-testAccPolarDBClusterSENormalCreate"
+	resourceId := "alicloud_polardb_cluster.default"
+	var basicMap = map[string]string{
+		"description":   CHECKSET,
+		"db_node_class": CHECKSET,
+		"vswitch_id":    CHECKSET,
+		"db_type":       CHECKSET,
+		"db_version":    CHECKSET,
+	}
+	ra := resourceAttrInit(resourceId, basicMap)
+	serviceFunc := func() interface{} {
+		return &PolarDBService{testAccProvider.Meta().(*connectivity.AliyunClient)}
+	}
+	rc := resourceCheckInitWithDescribeMethod(resourceId, &v, serviceFunc, "DescribeDBClusterAttribute")
+	rac := resourceAttrCheckInit(rc, ra)
+
+	testAccCheck := rac.resourceAttrMapUpdateSet()
+	testAccConfig := resourceTestAccConfigFunc(resourceId, name, resourcePolarDBClusterConfigDependence)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+		},
+
+		// module name
+		IDRefreshName: resourceId,
+
+		Providers:    testAccProviders,
+		CheckDestroy: rac.checkResourceDestroy(),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccConfig(map[string]interface{}{
+					"db_type":             "MySQL",
+					"db_version":          "8.0",
+					"pay_type":            "PostPaid",
+					"db_node_class":       "polar.mysql.x4.medium.c",
+					"vswitch_id":          "${data.alicloud_vswitches.default.vswitches.0.id}",
+					"description":         "${var.name}",
+					"resource_group_id":   "${data.alicloud_resource_manager_resource_groups.default.ids.0}",
+					"creation_category":   "SENormal",
+					"storage_type":        "ESSDPL1",
+					"storage_space":       "20",
+					"hot_standby_cluster": "ON",
+				}),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheck(map[string]string{
+						"resource_group_id": CHECKSET,
+						"zone_id":           CHECKSET,
+						"storage_type":      "ESSDPL1",
+						"storage_space":     "20",
+					}),
+				),
+			},
+			{
+				ResourceName:            resourceId,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"modify_type", "hot_standby_cluster"},
+			},
+		},
+	})
+}
+
 func testAccCheckKeyValueInMapsForPolarDB(ps []map[string]interface{}, propName, key, value string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		for _, policy := range ps {
@@ -780,8 +845,8 @@ func resourcePolarDBClusterConfigDependence(name string) string {
 		name_regex = "^default-NODELETING$"
 	}
 	data "alicloud_vswitches" "default" {
-		zone_id = data.alicloud_polardb_node_classes.this.classes.0.zone_id
-		vpc_id = data.alicloud_vpcs.default.ids.0
+		zone_id = "cn-shanghai-L"
+		vpc_id = "vpc-uf66as8kuoklao1e3qfbn"
 	}
 
 	data "alicloud_polardb_node_classes" "this" {
@@ -797,7 +862,7 @@ func resourcePolarDBClusterConfigDependence(name string) string {
 	resource "alicloud_security_group" "default" {
 		count = 2
 		name   = var.name
-		vpc_id = data.alicloud_vpcs.default.ids.0
+		vpc_id = "vpc-uf66as8kuoklao1e3qfbn"
 	}
 
 `, name)
