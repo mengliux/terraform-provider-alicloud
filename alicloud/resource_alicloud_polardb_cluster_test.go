@@ -160,7 +160,7 @@ func TestAccAlicloudPolarDBClusterUpdate(t *testing.T) {
 				ResourceName:            resourceId,
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"modify_type", "imci_switch", "sub_category"},
+				ImportStateVerifyIgnore: []string{"modify_type", "imci_switch", "sub_category", "upgrade_type"},
 			},
 			{
 				Config: testAccConfig(map[string]interface{}{

@@ -1652,3 +1652,33 @@ func (s *PolarDBService) DescribePolarDBParameterGroup(id string) (object map[st
 	object = v.([]interface{})[0].(map[string]interface{})
 	return object, nil
 }
+func (s *PolarDBService) DescribePolarDescribeDBClusterVersion(id string) (instance *polardb.DescribeDBClusterVersionResponse, err error) {
+	request := polardb.CreateDescribeDBClusterVersionRequest()
+	request.RegionId = s.client.RegionId
+	request.DBClusterId = id
+
+	var response *polardb.DescribeDBClusterVersionResponse
+	wait := incrementalWait(3*time.Second, 3*time.Second)
+	err = resource.Retry(5*time.Minute, func() *resource.RetryError {
+		raw, err := s.client.WithPolarDBClient(func(polarDBClient *polardb.Client) (interface{}, error) {
+			return polarDBClient.DescribeDBClusterVersion(request)
+		})
+		if err != nil {
+			if NeedRetry(err) {
+				wait()
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
+		}
+		addDebug(request.GetActionName(), raw, request.RpcRequest, request)
+		response, _ = raw.(*polardb.DescribeDBClusterVersionResponse)
+		return nil
+	})
+	if err != nil {
+		if IsExpectedErrors(err, []string{"InvalidDBClusterId.NotFound"}) {
+			return instance, WrapErrorf(err, NotFoundMsg, AlibabaCloudSdkGoERROR)
+		}
+		return instance, WrapErrorf(err, DefaultErrorMsg, id, request.GetActionName(), AlibabaCloudSdkGoERROR)
+	}
+	return response, nil
+}

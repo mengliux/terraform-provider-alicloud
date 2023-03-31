@@ -286,6 +286,52 @@ func resourceAlicloudPolarDBCluster() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"upgrade_type": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ValidateFunc: validation.StringInSlice([]string{"DB", "PROXY", "ALL"}, false),
+			},
+			"is_latest_version": {
+				Type:         schema.TypeString,
+				Computed:     true,
+				ValidateFunc: validation.StringInSlice([]string{"true", "false"}, false),
+			},
+			"db_revision_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"db_version_status": {
+				Type:         schema.TypeString,
+				Computed:     true,
+				ValidateFunc: validation.StringInSlice([]string{"Stable", "Old", "HighRisk"}, false),
+			},
+			"db_latest_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"db_minor_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"is_proxy_latest_version": {
+				Type:         schema.TypeString,
+				Computed:     true,
+				ValidateFunc: validation.StringInSlice([]string{"true", "false"}, false),
+			},
+			"proxy_revision_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
+			"proxy_version_status": {
+				Type:         schema.TypeString,
+				Computed:     true,
+				ValidateFunc: validation.StringInSlice([]string{"Stable", "Old", "HighRisk"}, false),
+			},
+			"proxy_latest_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 	}
 }
@@ -711,6 +757,23 @@ func resourceAlicloudPolarDBClusterUpdate(d *schema.ResourceData, meta interface
 		}
 		d.SetPartial("deletion_lock")
 	}
+
+	if !d.IsNewResource() && d.HasChange("upgrade_type") {
+		request := polardb.CreateUpgradeDBClusterVersionRequest()
+		request.RegionId = client.RegionId
+		request.DBClusterId = d.Id()
+		request.UpgradeType = d.Get("upgrade_type").(string)
+
+		raw, err := client.WithPolarDBClient(func(polarDBClient *polardb.Client) (interface{}, error) {
+			return polarDBClient.UpgradeDBClusterVersion(request)
+		})
+		if err != nil {
+			return WrapErrorf(err, DefaultErrorMsg, d.Id(), request.GetActionName(), AlibabaCloudSdkGoERROR)
+		}
+		addDebug(request.GetActionName(), raw, request.RpcRequest, request)
+		d.SetPartial("upgrade_type")
+	}
+
 	d.Partial(false)
 	return resourceAlicloudPolarDBClusterRead(d, meta)
 }
@@ -862,6 +925,23 @@ func resourceAlicloudPolarDBClusterRead(d *schema.ResourceData, meta interface{}
 		var storageSpace = resultStorageSpace / 1024 / 1024 / 1024
 		d.Set("storage_space", storageSpace)
 	}
+	dbClusterVersion, err := polarDBService.DescribePolarDescribeDBClusterVersion(d.Id())
+	if err != nil {
+		if NotFoundError(err) {
+			d.SetId("")
+			return nil
+		}
+		return WrapError(err)
+	}
+	d.Set("is_latest_version", dbClusterVersion.IsLatestVersion)
+	d.Set("db_revision_version", dbClusterVersion.DBRevisionVersion)
+	d.Set("db_version_status", dbClusterVersion.DBVersionStatus)
+	d.Set("db_latest_version", dbClusterVersion.DBLatestVersion)
+	d.Set("db_minor_version", dbClusterVersion.DBMinorVersion)
+	d.Set("is_proxy_latest_version", clusterAttribute.IsProxyLatestVersion)
+	d.Set("proxy_revision_version", dbClusterVersion.ProxyRevisionVersion)
+	d.Set("proxy_version_status", dbClusterVersion.ProxyVersionStatus)
+	d.Set("proxy_latest_version", dbClusterVersion.ProxyLatestVersion)
 	return nil
 }
 
