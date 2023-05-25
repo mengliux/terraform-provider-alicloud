@@ -181,6 +181,10 @@ func dataSourceAlicloudPolarDBInstanceClassesRead(d *schema.ResourceData, meta i
 				}
 
 			}
+			// 过滤掉不支持的可用区数据
+			if len(dbNodeClasses) == 0 {
+				continue
+			}
 			availableResources := map[string]interface{}{
 				"engine":              supportedEngine.Engine,
 				"available_resources": dbNodeClasses,
@@ -203,7 +207,6 @@ func dataSourceAlicloudPolarDBInstanceClassesRead(d *schema.ResourceData, meta i
 
 	}
 	d.SetId(dataResourceIdHash(ids))
-
 	err = d.Set("classes", availableClasses)
 	if err != nil {
 		return WrapError(err)
