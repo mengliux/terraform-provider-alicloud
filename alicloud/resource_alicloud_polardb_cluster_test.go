@@ -1294,6 +1294,71 @@ func TestAccAliCloudPolarDBCluster_Serverless(t *testing.T) {
 	})
 }
 
+func TestAccAliCloudPolarDBCluster_UpgradeFromPolarDB(t *testing.T) {
+	var v *polardb.DescribeDBClusterAttributeResponse
+	name := "tf-testAccPolarDBClusterUpgradeFromPolarDB"
+	resourceId := "alicloud_polardb_cluster.default"
+	var basicMap = map[string]string{
+		"description":       CHECKSET,
+		"db_node_class":     CHECKSET,
+		"vswitch_id":        CHECKSET,
+		"db_type":           CHECKSET,
+		"db_version":        CHECKSET,
+		"connection_string": REGEXMATCH + clusterConnectionStringRegexp,
+		"port":              "3306",
+	}
+	ra := resourceAttrInit(resourceId, basicMap)
+	serviceFunc := func() interface{} {
+		return &PolarDBService{testAccProvider.Meta().(*connectivity.AliyunClient)}
+	}
+	rc := resourceCheckInitWithDescribeMethod(resourceId, &v, serviceFunc, "DescribePolarDBClusterAttribute")
+	rac := resourceAttrCheckInit(rc, ra)
+
+	testAccCheck := rac.resourceAttrMapUpdateSet()
+	testAccConfig := resourceTestAccConfigFunc(resourceId, name, resourcePolarDBClusterUpgradeFromPolarDBConfigDependence)
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+		},
+
+		// module name
+		IDRefreshName: resourceId,
+
+		Providers:    testAccProviders,
+		CheckDestroy: rac.checkResourceDestroy(),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccConfig(map[string]interface{}{
+					"db_type":            "MySQL",
+					"db_version":         "8.0",
+					"db_min_version":     "8.0.2",
+					"pay_type":           "PostPaid",
+					"db_node_count":      "2",
+					"db_node_class":      "${data.alicloud_polardb_node_classes.this.classes.0.supported_engines.0.available_resources.0.db_node_class}",
+					"vswitch_id":         "${local.vswitch_id}",
+					"creation_category":  "Normal",
+					"creation_option":    "UpgradeFromPolarDB",
+					"source_resource_id": "${alicloud_polardb_cluster.cluster.id}",
+					"description":        "${var.name}",
+					"resource_group_id":  "${data.alicloud_resource_manager_resource_groups.default.ids.0}",
+				}),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheck(map[string]string{
+						"resource_group_id": CHECKSET,
+						"zone_id":           CHECKSET,
+					}),
+				),
+			},
+			{
+				ResourceName:            resourceId,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"modify_type", "creation_option", "source_resource_id"},
+			},
+		},
+	})
+}
+
 func testAccCheckKeyValueInMapsForPolarDB(ps []map[string]interface{}, propName, key, value string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		for _, policy := range ps {
@@ -1701,4 +1766,64 @@ func deleteTDEPolicyAndRole() error {
 		return err
 	}
 	return nil
+}
+
+func resourcePolarDBClusterUpgradeFromPolarDBConfigDependence(name string) string {
+	return fmt.Sprintf(`
+	variable "name" {
+		default = "%s"
+	}
+
+    data "alicloud_vpcs" "default" {
+		is_default = true
+	}
+
+    data "alicloud_db_zones" "default"{
+        engine = "MySQL"
+		engine_version = "8.0"
+		instance_charge_type = "PostPaid"
+    }
+
+	data "alicloud_polardb_node_classes" "this" {
+	  db_type    = "MySQL"
+	  db_version = "8.0"
+      pay_type   = "PostPaid"
+      category   = "Normal"
+	}
+
+	data "alicloud_resource_manager_resource_groups" "default" {
+		status = "OK"
+	}
+
+	resource "alicloud_security_group" "default" {
+		count = 2
+		name   = "${var.name}"
+	    vpc_id = "${data.alicloud_vpcs.default.ids.0}"
+	}
+
+	data "alicloud_vswitches" "default" {
+	  vpc_id = data.alicloud_vpcs.default.ids.0
+	  zone_id = data.alicloud_db_zones.default.zones.0.id
+	}
+
+    resource "alicloud_polardb_cluster" "cluster" {
+		db_type = "MySQL"
+		db_version = "8.0"
+		pay_type = "PostPaid"
+        db_node_count = "2"
+		db_node_class = "polar.mysql.x4.medium"
+		vswitch_id = "${local.vswitch_id}"
+		description = "${var.name}"
+        parameters {
+            name = "loose_polar_log_bin"
+            value = "ON"
+        }
+	}
+    
+    resource "alicloud_polardb_database" "default" {
+        db_cluster_id =  "${alicloud_polardb_cluster.cluster.id}",
+		db_name =        "tftestresourcdatabase",
+        db_description = "resourc edatabase from terraform"
+    }
+`, name)
 }

@@ -367,6 +367,13 @@ func polardbDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return true
 }
 
+func polardbMinVersionDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
+	if d.Get("db_type").(string) == "MySQL" && d.Get("db_version").(string) == "8.0" {
+		return false
+	}
+	return true
+}
+
 func adbPostPaidAndRenewDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	if v, ok := d.GetOk("pay_type"); ok && v.(string) == "PrePaid" && d.Get("renewal_status").(string) != string(RenewNotRenewal) {
 		return false

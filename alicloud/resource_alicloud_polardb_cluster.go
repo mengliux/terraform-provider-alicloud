@@ -244,7 +244,7 @@ func resourceAlicloudPolarDBCluster() *schema.Resource {
 			},
 			"creation_option": {
 				Type:         schema.TypeString,
-				ValidateFunc: StringInSlice([]string{"Normal", "CloneFromPolarDB", "CloneFromRDS", "MigrationFromRDS", "CreateGdnStandby"}, false),
+				ValidateFunc: StringInSlice([]string{"Normal", "CloneFromPolarDB", "CloneFromRDS", "MigrationFromRDS", "CreateGdnStandby", "UpgradeFromPolarDB"}, false),
 				Optional:     true,
 				Computed:     true,
 			},
@@ -260,6 +260,14 @@ func resourceAlicloudPolarDBCluster() *schema.Resource {
 				Type:         schema.TypeString,
 				ValidateFunc: StringInSlice([]string{"LATEST", "BackupID", "Timestamp"}, false),
 				Optional:     true,
+			},
+			"db_minor_version": {
+				Type:             schema.TypeString,
+				ValidateFunc:     StringInSlice([]string{"8.0.2", "8.0.1"}, false),
+				Optional:         true,
+				Computed:         true,
+				ForceNew:         true,
+				DiffSuppressFunc: polardbMinVersionDiffSuppressFunc,
 			},
 			"storage_type": {
 				Type:         schema.TypeString,
@@ -1102,11 +1110,11 @@ func resourceAlicloudPolarDBClusterRead(d *schema.ResourceData, meta interface{}
 	d.Set("status", clusterAttribute.DBClusterStatus)
 	d.Set("create_time", clusterAttribute.CreationTime)
 
-	tags, err := polarDBService.DescribeTags(d.Id(), "cluster")
-	if err != nil {
-		return WrapError(err)
-	}
-	d.Set("tags", polarDBService.tagsToMap(tags))
+	//tags, err := polarDBService.DescribeTags(d.Id(), "cluster")
+	//if err != nil {
+	//	return WrapError(err)
+	//}
+	//d.Set("tags", polarDBService.tagsToMap(tags))
 
 	if clusterAttribute.PayType == string(Prepaid) {
 		clusterAutoRenew, err := polarDBService.DescribePolarDBAutoRenewAttribute(d.Id())
@@ -1194,6 +1202,12 @@ func resourceAlicloudPolarDBClusterRead(d *schema.ResourceData, meta interface{}
 		d.Set("allow_shut_down", serverlessInfo["AllowShutDown"])
 		d.Set("seconds_until_auto_pause", formatInt(serverlessInfo["SecondsUntilAutoPause"]))
 	}
+
+	clusterVersionInfo, err := polarDBService.DescribeDBClusterVersion(d.Id())
+	if err != nil {
+		return WrapError(err)
+	}
+	d.Set("db_min_version", clusterVersionInfo["DBMinorVersion"])
 	return nil
 }
 
@@ -1259,6 +1273,7 @@ func buildPolarDBCreateRequest(d *schema.ResourceData, meta interface{}) (map[st
 		"ClientToken":          buildClientToken("CreateDBCluster"),
 		"CreationCategory":     d.Get("creation_category").(string),
 		"CloneDataPoint":       d.Get("clone_data_point").(string),
+		"DBMinVersion":         Trim(d.Get("db_min_version").(string)),
 	}
 
 	v, exist := d.GetOk("creation_option")
@@ -1299,6 +1314,11 @@ func buildPolarDBCreateRequest(d *schema.ResourceData, meta interface{}) (map[st
 				request["SourceResourceId"] = d.Get("source_resource_id").(string)
 			}
 		}
+	}
+
+	if exist && v.(string) == "UpgradeFromPolarDB" {
+		request["SourceResourceId"] = d.Get("source_resource_id").(string)
+		request["CreationOption"] = d.Get("creation_option").(string)
 	}
 
 	if v, ok := d.GetOk("storage_type"); ok && v.(string) != "" {
