@@ -367,6 +367,13 @@ func polardbDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	return true
 }
 
+func polardbSwapConnectionStringDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
+	if swapConnectionString, ok := d.GetOk("swap_connection_string"); ok && swapConnectionString.(string) == "true" {
+		return false
+	}
+	return true
+}
+
 func polardbMinVersionDiffSuppressFunc(k, old, new string, d *schema.ResourceData) bool {
 	if d.Get("db_type").(string) == "MySQL" && d.Get("db_version").(string) == "8.0" {
 		return false

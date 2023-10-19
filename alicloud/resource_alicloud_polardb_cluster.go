@@ -269,6 +269,35 @@ func resourceAlicloudPolarDBCluster() *schema.Resource {
 				ForceNew:         true,
 				DiffSuppressFunc: polardbMinVersionDiffSuppressFunc,
 			},
+			"source_rds_db_instance_id": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				RequiredWith: []string{"source_rds_db_instance_id", "new_master_instance_id", "swap_connection_string"},
+			},
+			"new_master_instance_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+			},
+			"swap_connection_string": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ValidateFunc: StringInSlice([]string{"true", "false"}, false),
+			},
+			"connection_strings": {
+				Type:             schema.TypeString,
+				Optional:         true,
+				Computed:         true,
+				DiffSuppressFunc: polardbSwapConnectionStringDiffSuppressFunc,
+			},
+			"continue_enable_binlog": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Computed:     true,
+				ValidateFunc: StringInSlice([]string{"true", "false"}, false),
+			},
 			"storage_type": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -999,6 +1028,85 @@ func resourceAlicloudPolarDBClusterUpdate(d *schema.ResourceData, meta interface
 		d.SetPartial("storage_space")
 	}
 
+	if d.HasChange("source_rds_db_instance_id") {
+		action := "ModifyDBClusterMigration"
+		sourceRdsDbInstanceId := d.Get("source_rds_db_instance_id").(string)
+		newMasterInstanceId := d.Get("new_master_instance_id").(string)
+		request := map[string]interface{}{
+			"DBClusterId":           d.Id(),
+			"SourceRdsDbInstanceId": sourceRdsDbInstanceId,
+			"NewMasterInstanceId":   newMasterInstanceId,
+		}
+		if v, ok := d.GetOk("swap_connection_string"); ok && v.(string) != "" {
+			request["SwapConnectionString"] = v
+		}
+		if v, ok := d.GetOk("connection_strings"); ok && v.(string) != "" {
+			request["ConnectionStrings"] = v
+		}
+		wait := incrementalWait(3*time.Second, 3*time.Second)
+		err := resource.Retry(d.Timeout(schema.TimeoutUpdate), func() *resource.RetryError {
+			response, err := conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &util.RuntimeOptions{})
+			if err != nil {
+				if NeedRetry(err) {
+					wait()
+					return resource.RetryableError(err)
+				}
+				addDebug(action, response, request)
+			}
+			return nil
+		})
+		if err != nil {
+			if IsExpectedErrors(err, []string{"InvalidDBCluster.NotFound"}) {
+				return nil
+			}
+			return WrapErrorf(err, DefaultErrorMsg, d.Id(), action, ProviderERROR)
+		}
+		// wait cluster status change
+		stateConf := BuildStateConf([]string{"SWITCHING"}, []string{"POLARDB2RDS_SYNCING"}, d.Timeout(schema.TimeoutUpdate), 4*time.Minute, polarDBService.PolarDBClusterMigrationStateRefreshFunc(d.Id(), []string{""}))
+		if _, err := stateConf.WaitForState(); err != nil {
+			return WrapErrorf(err, IdMsg, d.Id())
+		}
+		d.SetPartial("source_rds_db_instance_id")
+		d.SetPartial("new_master_instance_id")
+		d.SetPartial("swap_connection_string")
+		d.SetPartial("connection_strings")
+	}
+
+	if d.HasChange("continue_enable_binlog") {
+		action := "CloseDBClusterMigration"
+		request := map[string]interface{}{
+			"DBClusterId": d.Id(),
+		}
+		if v, ok := d.GetOk("continue_enable_binlog"); ok {
+			continueEnableBinlog, _ := strconv.ParseBool(v.(string))
+			request["ContinueEnableBinlog"] = continueEnableBinlog
+		}
+		wait := incrementalWait(3*time.Second, 3*time.Second)
+		err := resource.Retry(d.Timeout(schema.TimeoutUpdate), func() *resource.RetryError {
+			response, err := conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &util.RuntimeOptions{})
+			if err != nil {
+				if NeedRetry(err) {
+					wait()
+					return resource.RetryableError(err)
+				}
+				addDebug(action, response, request)
+			}
+			return nil
+		})
+		if err != nil {
+			if IsExpectedErrors(err, []string{"InvalidDBCluster.NotFound"}) {
+				return nil
+			}
+			return WrapErrorf(err, DefaultErrorMsg, d.Id(), action, ProviderERROR)
+		}
+		// wait cluster status change from StorageExpanding to running
+		stateConf := BuildStateConf([]string{"CLOSING"}, []string{""}, d.Timeout(schema.TimeoutUpdate), 4*time.Minute, polarDBService.PolarDBClusterMigrationStateRefreshFunc(d.Id(), []string{""}))
+		if _, err := stateConf.WaitForState(); err != nil {
+			return WrapErrorf(err, IdMsg, d.Id())
+		}
+		d.SetPartial("continue_enable_binlog")
+	}
+
 	d.Partial(false)
 	return resourceAlicloudPolarDBClusterRead(d, meta)
 }
@@ -1207,7 +1315,7 @@ func resourceAlicloudPolarDBClusterRead(d *schema.ResourceData, meta interface{}
 	if err != nil {
 		return WrapError(err)
 	}
-	d.Set("db_min_version", clusterVersionInfo["DBMinorVersion"])
+	d.Set("db_minor_version", clusterVersionInfo["DBMinorVersion"])
 	return nil
 }
 
@@ -1273,7 +1381,7 @@ func buildPolarDBCreateRequest(d *schema.ResourceData, meta interface{}) (map[st
 		"ClientToken":          buildClientToken("CreateDBCluster"),
 		"CreationCategory":     d.Get("creation_category").(string),
 		"CloneDataPoint":       d.Get("clone_data_point").(string),
-		"DBMinVersion":         Trim(d.Get("db_min_version").(string)),
+		"DBMinorVersion":       Trim(d.Get("db_minor_version").(string)),
 	}
 
 	v, exist := d.GetOk("creation_option")

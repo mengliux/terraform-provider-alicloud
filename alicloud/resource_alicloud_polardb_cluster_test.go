@@ -1331,11 +1331,11 @@ func TestAccAliCloudPolarDBCluster_UpgradeFromPolarDB(t *testing.T) {
 				Config: testAccConfig(map[string]interface{}{
 					"db_type":            "MySQL",
 					"db_version":         "8.0",
-					"db_min_version":     "8.0.2",
+					"db_minor_version":   "8.0.2",
 					"pay_type":           "PostPaid",
 					"db_node_count":      "2",
 					"db_node_class":      "${data.alicloud_polardb_node_classes.this.classes.0.supported_engines.0.available_resources.0.db_node_class}",
-					"vswitch_id":         "${local.vswitch_id}",
+					"vswitch_id":         "${data.alicloud_vswitches.default.ids.0}",
 					"creation_category":  "Normal",
 					"creation_option":    "UpgradeFromPolarDB",
 					"source_resource_id": "${alicloud_polardb_cluster.cluster.id}",
@@ -1354,6 +1354,29 @@ func TestAccAliCloudPolarDBCluster_UpgradeFromPolarDB(t *testing.T) {
 				ImportState:             true,
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"modify_type", "creation_option", "source_resource_id"},
+			},
+			{
+				Config: testAccConfig(map[string]interface{}{
+					"source_rds_db_instance_id": "${alicloud_polardb_cluster.cluster.id}",
+					"swap_connection_string":    "false",
+				}),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheck(map[string]string{
+						"source_rds_db_instance_id": CHECKSET,
+						"new_master_instance_id":    CHECKSET,
+						"swap_connection_string":    CHECKSET,
+					}),
+				),
+			},
+			{
+				Config: testAccConfig(map[string]interface{}{
+					"continue_enable_binlog": "true",
+				}),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheck(map[string]string{
+						"continue_enable_binlog": CHECKSET,
+					}),
+				),
 			},
 		},
 	})
@@ -1812,7 +1835,7 @@ func resourcePolarDBClusterUpgradeFromPolarDBConfigDependence(name string) strin
 		pay_type = "PostPaid"
         db_node_count = "2"
 		db_node_class = "polar.mysql.x4.medium"
-		vswitch_id = "${local.vswitch_id}"
+		vswitch_id = "${data.alicloud_vswitches.default.ids.0}"
 		description = "${var.name}"
         parameters {
             name = "loose_polar_log_bin"
@@ -1821,8 +1844,8 @@ func resourcePolarDBClusterUpgradeFromPolarDBConfigDependence(name string) strin
 	}
     
     resource "alicloud_polardb_database" "default" {
-        db_cluster_id =  "${alicloud_polardb_cluster.cluster.id}",
-		db_name =        "tftestresourcdatabase",
+        db_cluster_id =  "${alicloud_polardb_cluster.cluster.id}"
+		db_name =        "tftestresourcdatabase"
         db_description = "resourc edatabase from terraform"
     }
 `, name)

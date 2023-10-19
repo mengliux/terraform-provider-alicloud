@@ -1828,3 +1828,63 @@ func (s *PolarDBService) DescribeDBClusterVersion(id string) (object map[string]
 
 	return object, nil
 }
+
+func (s *PolarDBService) DescribePolarDBClusterMigration(id string) (object map[string]interface{}, err error) {
+	var response map[string]interface{}
+	conn, err := s.client.NewPolarDBClient()
+	if err != nil {
+		return nil, WrapError(err)
+	}
+	action := "DescribeDBClusterMigration"
+	request := map[string]interface{}{
+		"DBClusterId": id,
+	}
+	runtime := util.RuntimeOptions{}
+	runtime.SetAutoretry(true)
+	wait := incrementalWait(3*time.Second, 3*time.Second)
+	err = resource.Retry(5*time.Minute, func() *resource.RetryError {
+		response, err = conn.DoRequest(StringPointer(action), nil, StringPointer("POST"), StringPointer("2017-08-01"), StringPointer("AK"), nil, request, &runtime)
+		if err != nil {
+			if NeedRetry(err) {
+				wait()
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+	addDebug(action, response, request)
+	if err != nil {
+		if IsExpectedErrors(err, []string{"InvalidDBClusterId.NotFound"}) {
+			return object, WrapErrorf(err, NotFoundMsg, AlibabaCloudSdkGoERROR)
+		}
+		return object, WrapErrorf(err, DefaultErrorMsg, id, action, AlibabaCloudSdkGoERROR)
+	}
+	v, err := jsonpath.Get("$", response)
+	if err != nil {
+		return object, WrapErrorf(err, FailedGetAttributeMsg, id, "$", response)
+	}
+	object = v.(map[string]interface{})
+	return object, nil
+}
+
+func (s *PolarDBService) PolarDBClusterMigrationStateRefreshFunc(id string, failStates []string) resource.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+
+		object, err := s.DescribePolarDBClusterMigration(id)
+		if err != nil {
+			if NotFoundError(err) {
+				// Set this to nil as if we didn't find anything.
+				return nil, "", nil
+			}
+			return nil, "", WrapError(err)
+		}
+
+		for _, failState := range failStates {
+			if fmt.Sprint(object["MigrationStatus"]) == failState {
+				return object, fmt.Sprint(object["MigrationStatus"]), WrapError(Error(FailedToReachTargetStatus, fmt.Sprint(object["MigrationStatus"])))
+			}
+		}
+		return object, fmt.Sprint(object["MigrationStatus"]), nil
+	}
+}
